@@ -52,7 +52,8 @@ public static partial class Program
     {
         var sources = JsonSerializer.Deserialize<Dictionary<string, string>>(sourceJson)!;
         var trees = sources.Select(file => CSharpSyntaxTree.ParseText(file.Value, path: file.Key));
-        var options = new CSharpCompilationOptions(OutputKind.ConsoleApplication)
+        // The .NET runtime in this worker has a single managed thread.
+        var options = new CSharpCompilationOptions(OutputKind.ConsoleApplication, concurrentBuild: false)
             .WithNullableContextOptions(NullableContextOptions.Enable);
         var compilation = CSharpCompilation.Create("Exercise", trees, References, options);
 

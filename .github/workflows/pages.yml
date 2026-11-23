@@ -55,8 +55,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-save --no-package-lock playwright@1.56.1
-      - run: npx playwright install --with-deps chromium
       - name: Verify the public workspace in a fresh browser
         env:
+          PAGES_BROWSER_CHANNEL: chrome
           PAGES_URL: ${{ needs.deploy.outputs.url }}
         run: node checks/browser.mjs

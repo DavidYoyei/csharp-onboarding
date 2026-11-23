@@ -6,9 +6,10 @@ const url = process.env.PAGES_URL;
 if (!url)
   throw new Error("Set PAGES_URL to the workspace URL.");
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ channel: process.env.PAGES_BROWSER_CHANNEL });
 const context = await browser.newContext();
 const page = await context.newPage();
+page.on("pageerror", (error) => console.error("Browser error:", error.message));
 const output = page.getByRole("log", { name: "Console output" });
 const editor = page.getByRole("textbox", { name: "C# source code" });
 const input = page.getByRole("textbox", { name: "Console input" });
@@ -134,8 +135,12 @@ try {
   console.log("Interactive exercises, registry download and text-file persistence passed.");
 } catch (error) {
   console.error("URL:", page.url());
-  console.error("Status:", await page.locator("#status").textContent().catch(() => ""));
-  console.error("Console:", await output.textContent().catch(() => ""));
+  const debug = await page.evaluate(() => ({
+    status: document.getElementById("status")?.textContent,
+    console: document.getElementById("output")?.textContent,
+    isolated: crossOriginIsolated,
+  })).catch(() => ({}));
+  console.error("Browser state:", debug);
   throw error;
 } finally {
   await browser.close();
