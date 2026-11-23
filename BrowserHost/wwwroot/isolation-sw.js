@@ -11,7 +11,9 @@ self.addEventListener("fetch", (event) => {
   // GitHub Pages serves static files. Set the isolation headers in this scope
   // so the worker can share console input with the page.
   event.respondWith((async () => {
-    const response = await fetch(request);
+    const response = await fetch(request, {
+      cache: request.mode === "navigate" ? "no-store" : "default",
+    });
     if (response.status === 0 || response.redirected)
       return response;
     const headers = new Headers(response.headers);

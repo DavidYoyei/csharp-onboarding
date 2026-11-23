@@ -29,6 +29,9 @@ public static partial class Program
     [JSImport("saveRegistry", "consoleBridge")]
     private static partial void SaveRegistry(string text);
 
+    [JSImport("beginExecution", "consoleBridge")]
+    private static partial void BeginExecution();
+
     [JSExport]
     public static void LoadReferences(byte[] archive)
     {
@@ -91,9 +94,21 @@ public static partial class Program
 
         // Each run gets a new worker and runtime, so uploaded code has fresh state.
         MethodInfo entry = Assembly.Load(binary.ToArray()).EntryPoint!;
+        // C# emits a synchronous wrapper for async Main. Await the actual method
+        // so the browser thread never blocks on the wrapper's monitor.
+        var entrySymbol = compilation.GetEntryPoint(default)!;
+        if (entry.Name != entrySymbol.MetadataName)
+        {
+            entry = entry.DeclaringType!
+                .GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                .Single(method => method.Name == entrySymbol.MetadataName
+                    && method.GetParameters().Length == entrySymbol.Parameters.Length
+                    && typeof(Task).IsAssignableFrom(method.ReturnType));
+        }
         object?[]? args = entry.GetParameters().Length == 0 ? null : new object[] { Array.Empty<string>() };
         try
         {
+            BeginExecution();
             if (entry.Invoke(null, args) is Task pending)
                 await pending;
         }

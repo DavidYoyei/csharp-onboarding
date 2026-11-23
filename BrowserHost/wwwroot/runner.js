@@ -1,27 +1,10 @@
 import { dotnet } from "./_framework/dotnet.js";
-import { bundleName } from "./runtime-bundle.js";
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
 
-async function fetchRuntimeBundle() {
-  const response = await fetch("./_framework/" + bundleName, { cache: "force-cache" });
-  if (!response.ok)
-    throw new Error("The compiler download is unavailable.");
-
-  let bytesRead = 0;
-  let nextUpdate = 0;
-  const progress = new TransformStream({
-    transform(chunk, controller) {
-      bytesRead += chunk.byteLength;
-      if (bytesRead >= nextUpdate) {
-        postMessage({ type: "download", bytes: bytesRead });
-        nextUpdate = bytesRead + 256 * 1024;
-      }
-      controller.enqueue(chunk);
-    },
-  });
-  const stream = response.body.pipeThrough(progress).pipeThrough(new DecompressionStream("gzip"));
+async function unpackRuntime(bundle) {
+  const stream = bundle.stream().pipeThrough(new DecompressionStream("gzip"));
   const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
   const headerSize = new DataView(bytes.buffer).getUint32(0, true);
   const manifest = JSON.parse(decoder.decode(bytes.subarray(4, 4 + headerSize)));
@@ -37,11 +20,8 @@ async function fetchRuntimeBundle() {
   return resources;
 }
 
-function startRuntime() {
-  if (typeof DecompressionStream !== "function")
-    return dotnet.create();
-
-  const resources = fetchRuntimeBundle().catch(() => new Map());
+function startRuntime(bundle) {
+  const resources = unpackRuntime(bundle);
   return dotnet.withResourceLoader((type, name, uri, integrity) => {
     if (type !== "assembly" && type !== "dotnetwasm")
       return undefined;
@@ -82,13 +62,9 @@ function readLine(buffer, unavailable) {
 self.addEventListener("message", async ({ data }) => {
   let file;
   try {
-    const response = fetch("./references.zip", { cache: "force-cache" });
-    const { setModuleImports, getAssemblyExports, getConfig } = await startRuntime();
-    const archive = await response;
-    if (!archive.ok)
-      throw new Error("The C# reference files could not be loaded.");
+    const { setModuleImports, getAssemblyExports, getConfig } = await startRuntime(data.compiler.bundle);
     const exports = await getAssemblyExports(getConfig().mainAssemblyName);
-    exports.Program.LoadReferences(new Uint8Array(await archive.arrayBuffer()));
+    exports.Program.LoadReferences(new Uint8Array(await data.compiler.references.arrayBuffer()));
 
     let initial = null;
     if (data.registry) {
@@ -109,6 +85,9 @@ self.addEventListener("message", async ({ data }) => {
       write(text) {
         postMessage({ type: "output", text });
       },
+      beginExecution() {
+        postMessage({ type: "running" });
+      },
       readLine() {
         return readLine(data.buffer, data.isolationError);
       },
@@ -124,7 +103,7 @@ self.addEventListener("message", async ({ data }) => {
         postMessage({ type: "registry", text });
       },
     });
-    postMessage({ type: "running" });
+    postMessage({ type: "compiling" });
     await exports.Program.Run(JSON.stringify(data.sources), initial);
     file?.close();
     file = undefined;

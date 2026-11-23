@@ -1,3 +1,5 @@
+import { downloadCompiler } from "./compiler-download.js";
+
 const exercises = {
   ListExercises: {
     task: "Week 2 / Task 2",
@@ -47,6 +49,7 @@ let execution;
 let registryText;
 let isolationError = "";
 let selection = 0;
+let compilerFiles;
 
 function readSaved(key) {
   try {
@@ -114,7 +117,7 @@ function loadWorkspace(id) {
   if (!workspaces.has(id)) {
     const pending = Promise.all(exercises[id].files.map(async (name) => {
       const key = fileKey(id, name);
-      const response = await fetch("./sources/" + key, { cache: "no-cache" });
+      const response = await fetch(new URL("./sources/" + key, import.meta.url));
       if (!response.ok)
         throw new Error("Could not load " + name + ".");
       const original = (await response.text()).replace(/\r\n?/g, "\n");
@@ -242,7 +245,8 @@ function stopRun(message) {
   if (!execution)
     return;
   clearTimeout(execution.timeout);
-  execution.worker.terminate();
+  execution.download.abort();
+  execution.worker?.terminate();
   execution = undefined;
   setInputEnabled(false);
   consoleInput.value = "";
@@ -252,42 +256,66 @@ function stopRun(message) {
     status.textContent = message;
 }
 
-function startRun() {
+async function startRun() {
   if (!openWorkspace || execution)
     return;
 
   output.textContent = "";
-  const worker = new Worker("./runner.js", { type: "module" });
   const buffer = crossOriginIsolated ? new SharedArrayBuffer(8 + 8192) : null;
-  execution = { worker, buffer };
+  const run = { download: new AbortController(), buffer };
+  execution = run;
   runButton.disabled = true;
   stopButton.disabled = false;
-  status.textContent = "Starting C# compiler";
+  status.textContent = compilerFiles ? "Starting C# runtime" : "Preparing C# compiler";
 
-  function watchdog(milliseconds) {
-    clearTimeout(execution.timeout);
-    execution.timeout = setTimeout(() => {
-      const starting = status.textContent.startsWith("Downloading") || status.textContent === "Starting C# compiler";
-      appendOutput(starting
-        ? "\nThe compiler download stalled. Press Run C# to retry.\n"
-        : "\nRun timed out. You can edit the code and try again.\n");
+  function watchdog(milliseconds, message) {
+    clearTimeout(run.timeout);
+    run.timeout = setTimeout(() => {
+      appendOutput("\n" + message + "\n");
       stopRun("Timed out");
     }, milliseconds);
   }
+
+  const sources = Object.fromEntries(Object.entries(openWorkspace).map(([name, file]) => [name, file.text]));
+  const registry = current === "StudentRegistry";
+  let worker;
+  try {
+    if (!compilerFiles) {
+      if (typeof DecompressionStream !== "function")
+        throw new Error("This browser cannot open the C# compiler. Use a current version of Chrome, Edge, Firefox, or Safari.");
+
+      const files = await downloadCompiler(run.download.signal, (bytes) => {
+        if (execution === run)
+          status.textContent = "Downloading C# compiler (" + (bytes / (1024 * 1024)).toFixed(1) + " MB)";
+      });
+      if (execution !== run)
+        return;
+      compilerFiles = files;
+    }
+    status.textContent = "Starting C# runtime";
+    worker = new Worker(new URL("./runner.js", import.meta.url), { type: "module" });
+    run.worker = worker;
+  } catch (error) {
+    if (execution === run) {
+      appendOutput(error.message + "\n");
+      stopRun("Runner unavailable");
+    }
+    return;
+  }
+
   worker.addEventListener("message", ({ data }) => {
-    if (execution?.worker !== worker)
+    if (execution !== run)
       return;
     if (data.type === "output") {
       appendOutput(data.text);
     } else if (data.type === "registry") {
       registryText = data.text;
-    } else if (data.type === "download") {
-      const megabytes = (data.bytes / (1024 * 1024)).toFixed(1);
-      status.textContent = "Downloading compiler (" + megabytes + " MB)";
-      watchdog(120000);
+    } else if (data.type === "compiling") {
+      status.textContent = "Compiling C#";
+      watchdog(90000, "The C# compiler did not finish. Press Run C# to retry.");
     } else if (data.type === "running") {
-      status.textContent = "Compiling and running";
-      watchdog(30000);
+      status.textContent = "Running";
+      watchdog(30000, "The program did not finish within 30 seconds.");
     } else if (data.type === "input") {
       clearTimeout(execution.timeout);
       status.textContent = "Waiting for input";
@@ -300,16 +328,15 @@ function startRun() {
     }
   });
   worker.addEventListener("error", () => {
-    if (execution?.worker !== worker)
+    if (execution !== run)
       return;
     appendOutput("The browser could not start the C# runner. Reload and try again.\n");
     stopRun("Runner unavailable");
   });
-  const sources = Object.fromEntries(Object.entries(openWorkspace).map(([name, file]) => [name, file.text]));
   worker.postMessage({
-    buffer, sources, registry: current === "StudentRegistry", isolationError,
+    buffer, sources, registry, isolationError, compiler: compilerFiles,
   });
-  watchdog(120000);
+  watchdog(90000, "The browser could not finish starting the C# runtime. Press Run C# to retry.");
 }
 
 async function downloadRegistry() {

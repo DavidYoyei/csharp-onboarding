@@ -8,6 +8,17 @@ if (!url)
 
 const browser = await chromium.launch({ channel: process.env.PAGES_BROWSER_CHANNEL });
 const context = await browser.newContext();
+let interruptedPart;
+let interruptedAttempts = 0;
+let compilerDownloads = 0;
+await context.route(/\/_framework\/runtime-[a-f0-9]+-\d+\.bin$/, async (route) => {
+  compilerDownloads++;
+  interruptedPart ??= route.request().url();
+  if (route.request().url() === interruptedPart && ++interruptedAttempts === 1)
+    await route.abort("connectionreset");
+  else
+    await route.continue();
+});
 const page = await context.newPage();
 page.on("pageerror", (error) => console.error("Browser error:", error.message));
 const pendingAssets = new Set();
@@ -25,7 +36,7 @@ page.on("requestfailed", (request) => {
     console.error("Runtime request failed:", request.url(), request.failure()?.errorText);
 });
 page.on("response", (response) => {
-  if (response.ok() && /\/_framework\/runtime-[a-f0-9]+\.bin$/.test(response.url()))
+  if (response.ok() && /\/_framework\/runtime-[a-f0-9]+-\d+\.bin$/.test(response.url()))
     downloadedBundle = true;
   if (response.status() >= 400 && pendingAssets.has(response.url()))
     console.error("Runtime asset:", response.status(), response.url());
@@ -58,6 +69,9 @@ try {
   // This context starts without account cookies, credentials or site data.
   const response = await page.goto(url, { waitUntil: "domcontentloaded" });
   assert.equal(response.status(), 200);
+  assert.match(await page.locator('script[type="module"]').getAttribute("src"), /\/releases\/[a-f0-9]+\/workspace\.js$/);
+  const direct = await page.goto(new URL("coralpay-csharp.html", url).href, { waitUntil: "domcontentloaded" });
+  assert.equal(direct.status(), 200);
   await page.waitForFunction(() => crossOriginIsolated, undefined, { timeout: 30000 });
 
   await page.getByRole("checkbox", { name: "Setup and your first C# program" }).check();
@@ -70,6 +84,8 @@ try {
   await run.click();
   await waitForStatus("Finished");
   assert.ok(downloadedBundle, "The browser did not load the compressed compiler.");
+  assert.equal(interruptedAttempts, 2, "The browser did not retry the interrupted compiler part.");
+  const firstDownloadCount = compilerDownloads;
   assert.ok(separateWasmFiles.size <= 2, "The browser requested framework assemblies separately.");
   assert.match(await output.textContent(), /Largest: 45/);
   assert.match(await output.textContent(), /Odd positions: 4, 45, 3/);
@@ -83,6 +99,12 @@ try {
   await run.click();
   await waitForStatus("Run failed");
   assert.match(await output.textContent(), /Program\.cs.*CS0103/);
+
+  await editor.fill('using System;\nusing System.Threading.Tasks;\nawait Task.Delay(30);\nConsole.WriteLine("Async edit ran");');
+  await run.click();
+  await waitForStatus("Finished");
+  assert.match(await output.textContent(), /Async edit ran/);
+  assert.equal(compilerDownloads, firstDownloadCount, "A rerun downloaded the compiler again.");
   await page.getByRole("button", { name: "Reset file" }).click();
   assert.equal(await editor.inputValue(), starter);
   console.log("Signed-out editing, compilation, output and diagnostics passed.");
@@ -154,6 +176,7 @@ try {
   assert.match(await output.textContent(), /Name: Sample Student/);
   assert.match(await output.textContent(), /Course: Computer Science/);
   await enter("3", "Finished");
+  assert.equal(compilerDownloads, firstDownloadCount, "Reloading downloaded the compiler again.");
   console.log("Interactive exercises, registry download and text-file persistence passed.");
 } catch (error) {
   console.error("URL:", page.url());
