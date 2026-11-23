@@ -267,7 +267,10 @@ function startRun() {
   function watchdog(milliseconds) {
     clearTimeout(execution.timeout);
     execution.timeout = setTimeout(() => {
-      appendOutput("\nRun timed out. You can edit the code and try again.\n");
+      const starting = status.textContent.startsWith("Downloading") || status.textContent === "Starting C# compiler";
+      appendOutput(starting
+        ? "\nThe compiler download stalled. Press Run C# to retry.\n"
+        : "\nRun timed out. You can edit the code and try again.\n");
       stopRun("Timed out");
     }, milliseconds);
   }
@@ -278,6 +281,10 @@ function startRun() {
       appendOutput(data.text);
     } else if (data.type === "registry") {
       registryText = data.text;
+    } else if (data.type === "download") {
+      const megabytes = (data.bytes / (1024 * 1024)).toFixed(1);
+      status.textContent = "Downloading compiler (" + megabytes + " MB)";
+      watchdog(120000);
     } else if (data.type === "running") {
       status.textContent = "Compiling and running";
       watchdog(30000);
@@ -302,7 +309,7 @@ function startRun() {
   worker.postMessage({
     buffer, sources, registry: current === "StudentRegistry", isolationError,
   });
-  watchdog(90000);
+  watchdog(120000);
 }
 
 async function downloadRegistry() {

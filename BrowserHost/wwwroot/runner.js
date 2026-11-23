@@ -9,7 +9,19 @@ async function fetchRuntimeBundle() {
   if (!response.ok)
     throw new Error("The compiler download is unavailable.");
 
-  const stream = response.body.pipeThrough(new DecompressionStream("gzip"));
+  let bytesRead = 0;
+  let nextUpdate = 0;
+  const progress = new TransformStream({
+    transform(chunk, controller) {
+      bytesRead += chunk.byteLength;
+      if (bytesRead >= nextUpdate) {
+        postMessage({ type: "download", bytes: bytesRead });
+        nextUpdate = bytesRead + 256 * 1024;
+      }
+      controller.enqueue(chunk);
+    },
+  });
+  const stream = response.body.pipeThrough(progress).pipeThrough(new DecompressionStream("gzip"));
   const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
   const headerSize = new DataView(bytes.buffer).getUint32(0, true);
   const manifest = JSON.parse(decoder.decode(bytes.subarray(4, 4 + headerSize)));

@@ -39,7 +39,7 @@ async function waitForStatus(expected) {
   await page.waitForFunction((status) => {
     const current = document.getElementById("status").textContent;
     return [status, "Run failed", "Timed out", "Runner unavailable"].includes(current);
-  }, expected, { timeout: 110000 });
+  }, expected, { timeout: 300000 });
   assert.equal(await page.locator("#status").textContent(), expected, await output.textContent());
 }
 
