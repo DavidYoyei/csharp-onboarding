@@ -1,7 +1,48 @@
 import { dotnet } from "./_framework/dotnet.js";
+import { bundleName } from "./runtime-bundle.js";
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
+
+async function fetchRuntimeBundle() {
+  const response = await fetch("./_framework/" + bundleName, { cache: "force-cache" });
+  if (!response.ok)
+    throw new Error("The compiler download is unavailable.");
+
+  const stream = response.body.pipeThrough(new DecompressionStream("gzip"));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  const headerSize = new DataView(bytes.buffer).getUint32(0, true);
+  const manifest = JSON.parse(decoder.decode(bytes.subarray(4, 4 + headerSize)));
+  let offset = 4 + headerSize;
+  const resources = new Map();
+  for (const { name, size } of manifest) {
+    resources.set(name, bytes.subarray(offset, offset + size));
+    offset += size;
+  }
+  if (offset !== bytes.length)
+    throw new Error("The compiler download is incomplete.");
+
+  return resources;
+}
+
+function startRuntime() {
+  if (typeof DecompressionStream !== "function")
+    return dotnet.create();
+
+  const resources = fetchRuntimeBundle().catch(() => new Map());
+  return dotnet.withResourceLoader((type, name, uri, integrity) => {
+    if (type !== "assembly" && type !== "dotnetwasm")
+      return undefined;
+
+    return resources.then((files) => {
+      const fileName = new URL(uri, self.location.href).pathname.split("/").pop();
+      const asset = files.get(fileName) ?? files.get(name);
+      return asset
+        ? new Response(asset, { headers: { "Content-Type": "application/wasm" } })
+        : fetch(uri, { integrity });
+    });
+  }).create();
+}
 
 async function openRegistry() {
   const root = await navigator.storage.getDirectory();
@@ -30,7 +71,7 @@ self.addEventListener("message", async ({ data }) => {
   let file;
   try {
     const response = fetch("./references.zip", { cache: "force-cache" });
-    const { setModuleImports, getAssemblyExports, getConfig } = await dotnet.create();
+    const { setModuleImports, getAssemblyExports, getConfig } = await startRuntime();
     const archive = await response;
     if (!archive.ok)
       throw new Error("The C# reference files could not be loaded.");

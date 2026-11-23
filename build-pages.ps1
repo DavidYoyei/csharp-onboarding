@@ -18,6 +18,34 @@ New-Item -ItemType Directory -Path $runtimeTarget -Force | Out-Null
 Copy-Item -Path (Join-Path $runtimeLoader.Directory.FullName "*") -Destination $runtimeTarget -Recurse -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "BrowserHost/wwwroot/*") -Destination $site -Force
 
+# One compressed response avoids making a network request per framework assembly.
+$wasmFiles = @(Get-ChildItem -LiteralPath $runtimeLoader.Directory.FullName -Filter "*.wasm" -File | Sort-Object Name)
+if ($wasmFiles.Count -eq 0) { throw "No WebAssembly files were available to bundle." }
+
+$manifest = @($wasmFiles | ForEach-Object { @{ name = $_.Name; size = $_.Length } })
+$header = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $manifest -Compress))
+$bundle = Join-Path $publish "runtime-bundle.bin"
+$targetStream = [System.IO.File]::Create($bundle)
+try {
+    $compressed = [System.IO.Compression.GZipStream]::new($targetStream, [System.IO.Compression.CompressionLevel]::Optimal)
+    try {
+        $writer = [System.IO.BinaryWriter]::new($compressed, [System.Text.Encoding]::UTF8, $true)
+        try {
+            $writer.Write([int]$header.Length)
+            $writer.Write([byte[]]$header)
+            foreach ($file in $wasmFiles) {
+                $sourceStream = $file.OpenRead()
+                try { $sourceStream.CopyTo($compressed) } finally { $sourceStream.Dispose() }
+            }
+        } finally { $writer.Dispose() }
+    } finally { $compressed.Dispose() }
+} finally { $targetStream.Dispose() }
+
+$hash = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.Substring(0, 16).ToLowerInvariant()
+$bundleName = "runtime-$hash.bin"
+Copy-Item -LiteralPath $bundle -Destination (Join-Path $runtimeTarget $bundleName) -Force
+Set-Content -LiteralPath (Join-Path $site "runtime-bundle.js") -Encoding ascii -Value "export const bundleName = '$bundleName';"
+
 $packRoot = (& $Dotnet msbuild $project "-getProperty:NetCoreTargetingPackRoot").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not locate .NET framework references." }
 

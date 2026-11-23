@@ -10,6 +10,26 @@ const browser = await chromium.launch({ channel: process.env.PAGES_BROWSER_CHANN
 const context = await browser.newContext();
 const page = await context.newPage();
 page.on("pageerror", (error) => console.error("Browser error:", error.message));
+const pendingAssets = new Set();
+const separateWasmFiles = new Set();
+let downloadedBundle = false;
+page.on("request", (request) => {
+  if (request.url().includes("/_framework/"))
+    pendingAssets.add(request.url());
+  if (request.url().endsWith(".wasm"))
+    separateWasmFiles.add(request.url());
+});
+page.on("requestfinished", (request) => pendingAssets.delete(request.url()));
+page.on("requestfailed", (request) => {
+  if (pendingAssets.delete(request.url()) && request.failure()?.errorText !== "net::ERR_ABORTED")
+    console.error("Runtime request failed:", request.url(), request.failure()?.errorText);
+});
+page.on("response", (response) => {
+  if (response.ok() && /\/_framework\/runtime-[a-f0-9]+\.bin$/.test(response.url()))
+    downloadedBundle = true;
+  if (response.status() >= 400 && pendingAssets.has(response.url()))
+    console.error("Runtime asset:", response.status(), response.url());
+});
 const output = page.getByRole("log", { name: "Console output" });
 const editor = page.getByRole("textbox", { name: "C# source code" });
 const input = page.getByRole("textbox", { name: "Console input" });
@@ -49,6 +69,8 @@ try {
   await editor.fill(starter.replace("4, -2, 9, 7, 3", "4, -2, 45, 7, 3"));
   await run.click();
   await waitForStatus("Finished");
+  assert.ok(downloadedBundle, "The browser did not load the compressed compiler.");
+  assert.ok(separateWasmFiles.size <= 2, "The browser requested framework assemblies separately.");
   assert.match(await output.textContent(), /Largest: 45/);
   assert.match(await output.textContent(), /Odd positions: 4, 45, 3/);
   assert.match(await output.textContent(), /Running total: 4, 2, 47, 54, 57/);
@@ -141,6 +163,7 @@ try {
     isolated: crossOriginIsolated,
   })).catch(() => ({}));
   console.error("Browser state:", debug);
+  console.error("Pending runtime assets:", pendingAssets.size, [...pendingAssets].slice(0, 5));
   throw error;
 } finally {
   await browser.close();

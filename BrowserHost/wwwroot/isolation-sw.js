@@ -2,15 +2,16 @@ self.addEventListener("install", (event) => event.waitUntil(self.skipWaiting()))
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.url.indexOf(self.registration.scope) !== 0)
+  const request = event.request;
+  if (!request.url.startsWith(self.registration.scope))
     return;
-  if (event.request.cache === "only-if-cached" && event.request.mode !== "same-origin")
+  if (request.mode !== "navigate" && request.destination !== "worker")
     return;
 
   // GitHub Pages serves static files. Set the isolation headers in this scope
   // so the worker can share console input with the page.
   event.respondWith((async () => {
-    const response = await fetch(event.request);
+    const response = await fetch(request);
     if (response.status === 0 || response.redirected)
       return response;
     const headers = new Headers(response.headers);
