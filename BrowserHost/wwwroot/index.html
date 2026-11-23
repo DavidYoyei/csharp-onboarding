@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Read, edit and run C# onboarding exercises in your browser.">
+  <title>C# Onboarding Workspace</title>
+  <link rel="stylesheet" href="./workspace.css">
+  <script type="module" src="./workspace.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./"><span class="brand-mark" aria-hidden="true">C#</span> Onboarding Workspace</a>
+    <a class="source-link" href="https://github.com/DavidYoyei/csharp-onboarding">GitHub source</a>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" aria-label="Onboarding tasks">
+      <h2>Exercises</h2>
+      <div class="week">
+        <h3>Week 1</h3>
+        <button type="button" data-exercise="course" aria-current="page">C# fundamentals</button>
+      </div>
+      <div class="week">
+        <h3>Week 2</h3>
+        <button type="button" data-exercise="ListExercises">List exercises</button>
+        <button type="button" data-exercise="GuessMyNumber">Guess My Number</button>
+      </div>
+      <div class="week">
+        <h3>Week 3</h3>
+        <button type="button" data-exercise="NumberToWords">Number to Words</button>
+        <button type="button" data-exercise="StudentRegistry">Student Registry</button>
+      </div>
+    </nav>
+
+    <main>
+      <section id="course" aria-labelledby="course-title">
+        <div class="section-heading">
+          <p class="eyebrow">Week 1 / Task 1</p>
+          <h1 id="course-title">C# fundamentals</h1>
+          <p>Watch Bob Tabor’s Microsoft Learn series and track the topics you’ve covered.</p>
+          <a class="primary" href="https://learn.microsoft.com/en-us/shows/csharp-fundamentals-for-absolute-beginners/" target="_blank" rel="noopener">Open the video series</a>
+        </div>
+        <div class="checklist">
+          <div class="checklist-heading">
+            <h2>Watch checklist</h2>
+            <span id="progress" role="status">0 of 6 done</span>
+          </div>
+          <progress id="course-progress" max="6" value="0" aria-label="Week 1 progress"></progress>
+          <label><input type="checkbox" value="setup">Setup and your first C# program</label>
+          <label><input type="checkbox" value="basics">Variables, types and operators</label>
+          <label><input type="checkbox" value="flow">Conditions and loops</label>
+          <label><input type="checkbox" value="collections">Arrays and collections</label>
+          <label><input type="checkbox" value="methods">Methods, strings and dates</label>
+          <label><input type="checkbox" value="classes">Classes, files and handling errors</label>
+          <p class="muted">Progress is saved in this browser.</p>
+        </div>
+      </section>
+
+      <section id="exercise" aria-labelledby="exercise-title" hidden>
+        <div class="section-heading exercise-heading">
+          <div>
+            <p class="eyebrow" id="task-label"></p>
+            <h1 id="exercise-title"></h1>
+            <p id="exercise-description"></p>
+          </div>
+          <div class="actions">
+            <button id="reset" class="secondary" type="button">Reset file</button>
+            <button id="run" class="primary" type="button" aria-keyshortcuts="Control+Enter Meta+Enter">Run C#</button>
+          </div>
+        </div>
+        <div class="workbench">
+          <section class="editor-pane" aria-label="C# editor">
+            <div class="files" id="files" role="group" aria-label="Source files"></div>
+            <div class="editing">
+              <pre class="line-numbers" id="line-numbers" aria-hidden="true"></pre>
+              <div class="code-area">
+                <pre id="highlight" aria-hidden="true"></pre>
+                <textarea id="editor" aria-label="C# source code" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+              </div>
+            </div>
+            <div class="editor-footer"><span>C#</span><span>Ctrl / Cmd + Enter to run</span></div>
+          </section>
+          <section class="console-pane" aria-labelledby="console-title">
+            <div class="console-heading">
+              <h2 id="console-title">Console</h2>
+              <button id="stop" class="text-button" type="button" disabled>Stop</button>
+            </div>
+            <pre id="output" role="log" aria-label="Console output" tabindex="0"></pre>
+            <form id="console-form">
+              <label class="visually-hidden" for="console-input">Console input</label>
+              <input id="console-input" type="text" placeholder="Waiting for program input" autocomplete="off" spellcheck="false" maxlength="2000" disabled>
+              <button id="send" class="secondary" type="submit" disabled>Send</button>
+            </form>
+            <div class="console-footer">
+              <span id="status" role="status">Ready</span>
+              <button id="download" class="text-button" type="button" hidden>Download students.txt</button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

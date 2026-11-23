@@ -1,0 +1,62 @@
+name: GitHub Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Install the WebAssembly workload
+        run: dotnet workload install wasm-tools
+      - name: Build the console exercises
+        run: |
+          for exercise in ListExercises GuessMyNumber NumberToWords StudentRegistry; do
+            dotnet build Exercises/Exercises.csproj -p:Exercise="$exercise" --configuration Release
+          done
+      - name: Build the browser workspace
+        shell: pwsh
+        run: ./build-pages.ps1
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+      - uses: actions/deploy-pages@v4
+        id: deployment
+
+  signed-out-browser:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save --no-package-lock playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - name: Verify the public workspace in a fresh browser
+        env:
+          PAGES_URL: ${{ needs.deploy.outputs.url }}
+        run: node checks/browser.mjs

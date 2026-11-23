@@ -1,0 +1,6 @@
+bin/
+obj/
+dist/
+students.txt
+.dotnet/
+node_modules/
