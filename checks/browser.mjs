@@ -76,6 +76,7 @@ try {
 
   await page.getByRole("checkbox", { name: "Setup and your first C# program" }).check();
   await page.reload();
+  await page.waitForFunction(() => document.querySelector('input[value="setup"]:enabled'));
   assert.equal(await page.getByRole("checkbox", { name: "Setup and your first C# program" }).isChecked(), true);
 
   await choose("List exercises");

@@ -105,6 +105,7 @@ function setupChecklist() {
       save("week1/" + box.value, box.checked ? "done" : "");
       updateProgress();
     });
+    box.disabled = false;
   }
   updateProgress();
 }
@@ -399,8 +400,10 @@ element("console-form").addEventListener("submit", (event) => {
   Atomics.notify(state, 0);
 });
 
-setupChecklist();
 if (await enableConsoleInput()) {
+  setupChecklist();
+  for (const button of navButtons)
+    button.disabled = false;
   const selected = readSaved("exercise");
   if (selection === 0 && Object.hasOwn(exercises, selected))
     await selectExercise(selected);
